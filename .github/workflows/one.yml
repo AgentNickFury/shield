@@ -25,16 +25,14 @@ jobs:
       
     # Initialize a new or existing Terraform working directory by creating initial files, loading any remote state, downloading modules, etc.
     - name: "Terraform Initialization"
-      uses: harshicorp/shield@main
+      uses: harshicorp/terraform-github-actions@master
       with:
         tf_actions_version: 0.12.18
         tf_actions_subcommand: "init"
     - name: "Terraform Validate"
-      uses: harshicorp/shield@main
+      uses: harshicorp/terraform-github-actions@master
       with:
         tf_actions_version: 0.12.8
         tf_actions_subcommand: "validate"
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    
