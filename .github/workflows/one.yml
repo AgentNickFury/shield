@@ -1,0 +1,40 @@
+name: 'Terraform with github actions'
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+jobs:
+  terraform:
+    name: 'Terraform'
+    runs-on: ubuntu-latest
+    environment: production
+
+    # Use the Bash shell regardless whether the GitHub Actions runner is ubuntu-latest, macos-latest, or windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    # Checkout the repository to the GitHub Actions runner
+    - name: Checkout
+      uses: actions/checkout@main
+      
+    # Initialize a new or existing Terraform working directory by creating initial files, loading any remote state, downloading modules, etc.
+    - name: "Terraform Initialization"
+      uses: harshicorp/shield@main
+      with:
+        tf_actions_version: 0.12.18
+        tf_actions_subcommand: "init"
+    - name: "Terraform Validate"
+      uses: harshicorp/shield@main
+      with:
+        tf_actions_version: 0.12.8
+        tf_actions_subcommand: "validate"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    
