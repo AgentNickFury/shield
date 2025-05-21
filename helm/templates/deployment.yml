@@ -1,7 +1,14 @@
+# This code performs operations based on a previous interaction.
+# It is assumed that the code utilizes logic or data from an earlier step.
+# The code may include function definitions, variable assignments, or processing steps.
+# Comments have been added to clarify the purpose and flow of the code.
+# Please refer to the code for specific implementation details.
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "nginx.fullname" . }}
+  # Labels for the Deployment resource
   labels:
     app: {{ .Values.appLabel | default "nginx" }}
 spec:
@@ -14,6 +21,7 @@ spec:
       labels:
         app: {{ .Values.appLabel | default "nginx" }}
     spec:
+      serviceAccountName: {{ include "nginx.fullname" . }}-sa
       # Init container to perform initialization tasks before main container starts
       initContainers:
         - name: {{ .Values.initContainer.name | default "init-myservice" }}
@@ -74,6 +82,41 @@ spec:
           persistentVolumeClaim:
             claimName: {{ .Values.persistentVolumeClaim.name | default "my-pvc" }}
 ---
+# RBAC configuration for the deployment 
+# This section defines the ServiceAccount, Role, and RoleBinding for the deployment
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "nginx.fullname" . }}-sa
+  labels:
+    app: {{ .Values.appLabel | default "nginx" }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "nginx.fullname" . }}-role
+  labels:
+    app: {{ .Values.appLabel | default "nginx" }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "nginx.fullname" . }}-rolebinding
+  labels:
+    app: {{ .Values.appLabel | default "nginx" }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "nginx.fullname" . }}-sa
+roleRef:
+  kind: Role
+  name: {{ include "nginx.fullname" . }}-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# Service configuration for the deployment
 apiVersion: v1
 kind: Service
 metadata:
@@ -87,6 +130,105 @@ spec:
       targetPort: {{ .Values.container.port | default 80 }}
   selector:
     app: {{ .Values.appLabel | default "nginx" }}
+---
+# Network Policy configuration for the deployment
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy 
+metadata:
+  name: {{ include "nginx.fullname" . }}-network-policy
+  labels:
+    app: {{ .Values.appLabel | default "nginx" }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ .Values.appLabel | default "nginx" }}
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: {{ .Values.appLabel | default "nginx" }}
+      ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: {{ .Values.appLabel | default "nginx" }}
+      ports:
+        - protocol: TCP
+          port: 80
+---
+# Pod Anti-Affinity configuration for the deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nginx.fullname" . }}-anti-affinity
+spec:
+  replicas: {{ .Values.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Values.appLabel | default "nginx" }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.appLabel | default "nginx" }}
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: {{ .Values.appLabel | default "nginx" }}
+              topologyKey: "kubernetes.io/hostname"
+---
+# Pod Affinity configuration for the deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nginx.fullname" . }}-affinity
+spec:
+  replicas: {{ .Values.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Values.appLabel | default "nginx" }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.appLabel | default "nginx" }}
+    spec:
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: {{ .Values.appLabel | default "nginx" }}
+              topologyKey: "kubernetes.io/hostname"
+# Pod Security Policy configuration for the deployment (deprecated in newer Kubernetes versions)
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: {{ include "nginx.fullname" . }}-psp
+  labels:
+    app: {{ .Values.appLabel | default "nginx" }}
+spec:
+  privileged: false
+  allowPrivilegeEscalation: false
+  requiredDropCapabilities:
+    - ALL
+  volumes:
+    - 'configMap'
+    - 'emptyDir'
+    - 'persistentVolumeClaim'
+    - 'secret'
+  runAsUser:
+    rule: 'RunAsAny'
+  seLinux:
+    rule: 'RunAsAny'
+  supplementalGroups:
+    rule: 'RunAsAny'
+  fsGroup:
+    rule: 'RunAsAny'
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
