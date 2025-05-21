@@ -7,3 +7,4 @@ resource "azurerm_resource_group" "berlin" {
     name = var.rgName
     location = var.Location
 }
+

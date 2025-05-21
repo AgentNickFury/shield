@@ -1,0 +1,180 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nginx.fullname" . }}
+  labels:
+    app: {{ .Values.appLabel | default "nginx" }}
+spec:
+  replicas: {{ .Values.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Values.appLabel | default "nginx" }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.appLabel | default "nginx" }}
+    spec:
+      # Init container to perform initialization tasks before main container starts
+      initContainers:
+        - name: {{ .Values.initContainer.name | default "init-myservice" }}
+          image: {{ .Values.initContainer.image | default "busybox" }}
+          command: {{ toJson .Values.initContainer.command | default "[\"sh\", \"-c\", \"echo Initializing... && sleep 5\"]" }}
+      containers:
+        - name: {{ .Values.container.name | default "nginx" }}
+          image: {{ .Values.image.repository | default "nginx" }}:{{ .Values.image.tag | default "latest" }}
+          ports:
+            - containerPort: {{ .Values.container.port | default 80 }}
+          # Liveness probe to check if the container is running
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.livenessProbe.path | default "/" }}
+              port: {{ .Values.container.port | default 80 }}
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds | default 10 }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds | default 10 }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold | default 3 }}
+          # Readiness probe to check if the container is ready to serve traffic
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.readinessProbe.path | default "/" }}
+              port: {{ .Values.container.port | default 80 }}
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds | default 5 }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds | default 5 }}
+
+          # Resource requests and limits
+          resources:
+            requests:
+              memory: {{ .Values.resources.requests.memory | quote }}
+              cpu: {{ .Values.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.resources.limits.memory | quote }}
+              cpu: {{ .Values.resources.limits.cpu | quote }}
+
+          # Environment variables from ConfigMap and Secret
+          env:
+            - name: CONFIG_VALUE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.env.configMapName | default "my-configmap" }}
+                  key: {{ .Values.env.configMapKey | default "config-key" }}
+            - name: SECRET_VALUE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.env.secretName | default "my-secret" }}
+                  key: {{ .Values.env.secretKey | default "secret-key" }}
+          # Volume mounts
+          volumeMounts:
+            - name: my-volume
+              mountPath: {{ .Values.volumeMount.mountPath | default "/usr/share/nginx/html" }}
+      # Volumes
+      volumes:
+        - name: my-volume
+          emptyDir: {}
+        # Persistent volume claim
+        - name: my-pvc
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistentVolumeClaim.name | default "my-pvc" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nginx.fullname" . }}-service
+  labels:
+    app: {{ .Values.appLabel | default "nginx" }}
+spec:
+  type: {{ .Values.service.type | default "ClusterIP" }}
+  ports:
+    - port: {{ .Values.service.port | default 80 }}
+      targetPort: {{ .Values.container.port | default 80 }}
+  selector:
+    app: {{ .Values.appLabel | default "nginx" }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.persistentVolumeClaim.name | default "my-pvc" }}
+spec:
+  accessModes:
+    - {{ .Values.persistentVolumeClaim.accessMode | default "ReadWriteOnce" }}
+  resources:
+    requests:
+      storage: {{ .Values.persistentVolumeClaim.size | default "1Gi" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.env.configMapName | default "my-configmap" }}
+data:
+  {{ .Values.env.configMapKey | default "config-key" }}: {{ .Values.env.configMapValue | default "config-value" }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Values.env.secretName | default "my-secret" }}
+type: Opaque
+data:
+  {{ .Values.env.secretKey | default "secret-key" }}: {{ .Values.env.secretValue | default "c2VjcmV0LXZhbHVl" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "nginx.fullname" . }}-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: / 
+spec:
+  rules:
+    - host: {{ .Values.ingress.host | default "example.com" }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.path | default "/" }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "nginx.fullname" . }}-service
+                port:
+                  number: {{ .Values.service.port | default 80 }}
+---
+apiVersion: autoscaling/v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "nginx.fullname" . }}-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "nginx.fullname" . }}
+  minReplicas: {{ .Values.hpa.minReplicas | default 1 }}
+  maxReplicas: {{ .Values.hpa.maxReplicas | default 10 }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.targetCPUUtilizationPercentage | default 50 }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "nginx.fullname" . }}-cronjob
+spec:
+  schedule: {{ .Values.cronjob.schedule | quote | default "\"*/5 * * * *\"" }}
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: {{ .Values.container.name | default "nginx" }}
+              image: {{ .Values.image.repository | default "nginx" }}:{{ .Values.image.tag | default "latest" }}
+              ports:
+                - containerPort: {{ .Values.container.port | default 80 }}
+          restartPolicy: OnFailure
+---
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "nginx.fullname" . }}-pdb
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Values.appLabel | default "nginx" }}

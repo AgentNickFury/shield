@@ -1,0 +1,150 @@
+# Default values for the Helm chart
+
+# Label for the application
+appLabel: nginx
+
+# Number of pod replicas
+replicaCount: 2
+
+# Configuration for the init container
+initContainer:
+  name: init-myservice
+  image: busybox
+  command:
+    - sh
+    - -c
+    - echo Initializing... && sleep 5
+
+# Main application container configuration
+container:
+  name: nginx
+  port: 80
+
+# Docker image details
+image:
+  repository: nginx
+  tag: latest
+
+# Liveness probe configuration to check if the app is running
+livenessProbe:
+  path: /
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  failureThreshold: 3
+
+# Readiness probe configuration to check if the app is ready to serve traffic
+readinessProbe:
+  path: /
+  initialDelaySeconds: 5
+  periodSeconds: 5
+
+# Resource requests and limits for the container
+resources:
+  requests:
+    memory: "64Mi"
+    cpu: "250m"
+  limits:
+    memory: "128Mi"
+    cpu: "500m"
+
+# Environment variables and secrets configuration
+env:
+  configMapName: my-configmap
+  configMapKey: config-key
+  configMapValue: config-value
+  secretName: my-secret
+  secretKey: secret-key
+  secretValue: c2VjcmV0LXZhbHVl
+
+# Volume mount configuration
+volumeMount:
+  mountPath: /usr/share/nginx/html
+
+# Persistent Volume Claim configuration
+persistentVolumeClaim:
+  name: my-pvc
+  accessMode: ReadWriteOnce
+  size: 1Gi
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 80
+
+# Ingress configuration
+ingress:
+  host: example.com
+  path: /
+
+# Horizontal Pod Autoscaler configuration
+hpa:
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 50
+
+# CronJob schedule configuration
+cronjob:
+  schedule: "*/5 * * * *"
+
+# Pod Disruption Budget configuration
+pdb:
+  minAvailable: 1
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: nginx 
+      release: my-release
+# Network Policy configuration
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: nginx
+      ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: nginx
+      ports:
+        - protocol: TCP
+          port: 80
+# Pod Anti-Affinity configuration
+podAntiAffinity:
+  enabled: true
+  requiredDuringSchedulingIgnoredDuringExecution:
+    - labelSelector:
+        matchLabels:
+          app: nginx
+      topologyKey: "kubernetes.io/hostname"
+# Pod Affinity configuration
+podAffinity:
+  enabled: true
+  requiredDuringSchedulingIgnoredDuringExecution:
+    - labelSelector:
+        matchLabels:
+          app: nginx
+      topologyKey: "kubernetes.io/hostname"
+# Node Affinity configuration
+nodeAffinity:
+  requiredDuringSchedulingIgnoredDuringExecution:
+    nodeSelectorTerms:
+      - matchExpressions:
+          - key: "kubernetes.io/hostname"
+            operator: In
+            values:
+              - node1
+              - node2
+# Tolerations configuration
+tolerations:
+  - key: "key"
+    operator: "Equal"
+    value: "value"
+    effect: "NoSchedule"
+  - key: "key2"
+    operator: "Exists"
+    effect: "NoExecute"
