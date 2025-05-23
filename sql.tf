@@ -8,6 +8,7 @@
 # - Windows VM with SQL Server
 # - Outputs for public IP and admin password
 #######################################
+
 ############## variables
 #######################################
 variable "location" {
@@ -60,7 +61,8 @@ locals {
     # Define NSG rules for RDP and SQL access
     nsg_rules = [
       {
-        name                       = "Allow-
+        # Allow RDP from specified IP
+        name                       = "Allow-RDP"
         priority                   = 1001
         direction                  = "Inbound"
         access                     = "Allow"
@@ -71,6 +73,7 @@ locals {
         destination_address_prefix = "*"
       },
       {
+        # Allow SQL from specified IP
         name                       = "Allow-SQL"
         priority                   = 1002
         direction                  = "Inbound"
@@ -88,11 +91,13 @@ locals {
 ############## resources
 #######################################
 
+# Generate a random password for the SQL admin user
 resource "random_password" "sql_admin" {
     length  = 16
     special = true
 }
 
+# Create a resource group
 resource "azurerm_resource_group" "sql_rg" {
     name     = local.resource_group_name
     location = var.location
@@ -102,6 +107,7 @@ resource "azurerm_resource_group" "sql_rg" {
     }
 }
 
+# Create a virtual network
 resource "azurerm_virtual_network" "sql_vnet" {
     name                = local.vnet_name
     address_space       = local.vnet_address_space
@@ -110,6 +116,7 @@ resource "azurerm_virtual_network" "sql_vnet" {
     tags                = azurerm_resource_group.sql_rg.tags
 }
 
+# Create a subnet within the virtual network
 resource "azurerm_subnet" "sql_subnet" {
     name                 = local.subnet_name
     resource_group_name  = azurerm_resource_group.sql_rg.name
@@ -117,6 +124,7 @@ resource "azurerm_subnet" "sql_subnet" {
     address_prefixes     = local.subnet_address_prefixes
 }
 
+# Create a network security group with rules for RDP and SQL
 resource "azurerm_network_security_group" "sql_nsg" {
     name                = local.nsg_name
     location            = azurerm_resource_group.sql_rg.location
@@ -138,6 +146,7 @@ resource "azurerm_network_security_group" "sql_nsg" {
     }
 }
 
+# Create a public IP address for the VM
 resource "azurerm_public_ip" "sql_pip" {
     name                = local.public_ip_name
     location            = azurerm_resource_group.sql_rg.location
@@ -147,6 +156,7 @@ resource "azurerm_public_ip" "sql_pip" {
     tags                = azurerm_resource_group.sql_rg.tags
 }
 
+# Create a network interface and associate it with the subnet and public IP
 resource "azurerm_network_interface" "sql_nic" {
     name                = local.nic_name
     location            = azurerm_resource_group.sql_rg.location
@@ -164,11 +174,13 @@ resource "azurerm_network_interface" "sql_nic" {
     tags = azurerm_resource_group.sql_rg.tags
 }
 
+# Associate the network interface with the network security group
 resource "azurerm_network_interface_security_group_association" "sql_nic_nsg" {
     network_interface_id      = azurerm_network_interface.sql_nic.id
     network_security_group_id = azurerm_network_security_group.sql_nsg.id
 }
 
+# Create the Windows VM with SQL Server
 resource "azurerm_windows_virtual_machine" "sql_vm" {
     name                = local.vm_name
     resource_group_name = azurerm_resource_group.sql_rg.name
@@ -206,13 +218,30 @@ resource "azurerm_windows_virtual_machine" "sql_vm" {
     }
 }
 
+# Output the public IP address of the SQL Server VM
 output "sql_vm_public_ip" {
     value       = azurerm_public_ip.sql_pip.ip_address
     description = "Public IP address of the SQL Server VM"
 }
 
+# Output the admin password for the SQL Server VM (sensitive)
 output "sql_vm_admin_password" {
     value       = random_password.sql_admin.result
     sensitive   = true
     description = "Admin password for the SQL Server VM"
+}
+
+# Install SQL Server Management Studio (SSMS) using a custom script extension
+resource "azurerm_virtual_machine_extension" "ssms_install" {
+    name                 = "InstallSSMS"
+    virtual_machine_id   = azurerm_windows_virtual_machine.sql_vm.id
+    publisher            = "Microsoft.Compute"
+    type                 = "CustomScriptExtension"
+    type_handler_version = "1.10"
+
+    settings = <<SETTINGS
+        {
+            "commandToExecute": "powershell -ExecutionPolicy Unrestricted -Command \"Invoke-WebRequest -Uri https://aka.ms/ssms -OutFile C:\\SSMS-Setup.exe; Start-Process -FilePath C:\\SSMS-Setup.exe -ArgumentList '/install','/quiet','/norestart' -Wait\""
+        }
+SETTINGS
 }
