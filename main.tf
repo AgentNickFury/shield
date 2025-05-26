@@ -128,6 +128,42 @@ resource "azurerm_private_dns_zone" "main" {
     resource_group_name = azurerm_resource_group.main[each.key].name
 }
 
+# Managed NAT Gateway for AKS Egress
+resource "azurerm_nat_gateway" "main" {
+    for_each = var.resource_flags.aks ? { for env in local.active_environments : env => env } : {}
+    name                = "natgw-${each.key}"
+    location            = var.regions[0]
+    resource_group_name = azurerm_resource_group.main[each.key].name
+
+    sku_name = "Standard"
+    # No public_ip_address_ids or public_ip_prefix_ids for managed NAT Gateway
+    # Azure will manage the outbound IPs automatically
+}
+
+resource "azurerm_subnet" "aks" {
+    for_each = var.resource_flags.aks ? { for env in local.active_environments : env => env } : {}
+    name                 = "subnet-aks-${each.key}"
+    resource_group_name  = azurerm_resource_group.main[each.key].name
+    virtual_network_name = azurerm_virtual_network.main[each.key].name
+    address_prefixes     = ["10.${100 + index(local.active_environments, each.key)}.2.0/24"]
+
+    delegation {
+        name = "aks_delegation"
+        service_delegation {
+            name = "Microsoft.ContainerService/managedClusters"
+            actions = [
+                "Microsoft.Network/virtualNetworks/subnets/action"
+            ]
+        }
+    }
+}
+
+resource "azurerm_subnet_nat_gateway_association" "aks" {
+    for_each = var.resource_flags.aks ? { for env in local.active_environments : env => env } : {}
+    subnet_id      = azurerm_subnet.aks[each.key].id
+    nat_gateway_id = azurerm_nat_gateway.main[each.key].id
+}
+
 # AKS Cluster
 resource "azurerm_kubernetes_cluster" "main" {
     for_each = var.resource_flags.aks ? { for env in local.active_environments : env => env } : {}
@@ -137,9 +173,11 @@ resource "azurerm_kubernetes_cluster" "main" {
     dns_prefix          = "aks-${each.key}"
 
     default_node_pool {
-        name       = "default"
-        node_count = 1
-        vm_size    = "Standard_DS2_v2"
+        name            = "default"
+        node_count      = 1
+        vm_size         = "Standard_DS2_v2"
+        vnet_subnet_id  = azurerm_subnet.aks[each.key].id
+        outbound_type   = "managedNATGateway"
     }
 
     identity {
@@ -147,10 +185,10 @@ resource "azurerm_kubernetes_cluster" "main" {
     }
 
     network_profile {
-        network_plugin    = "azure"
-        dns_service_ip    = "10.2.0.10"
-        service_cidr      = "10.2.0.0/24"
-        docker_bridge_cidr = "172.17.0.1/16"
+        network_plugin      = "azure"
+        dns_service_ip      = "10.2.0.10"
+        service_cidr        = "10.2.0.0/24"
+        docker_bridge_cidr  = "172.17.0.1/16"
     }
 }
 
