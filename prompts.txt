@@ -1,0 +1,52 @@
+Modify to add self explanatory comments and description
+
+Modify to add 
+
+Update the code in place 
+
+Do not update but give me a list of places where best practices are not followed
+
+/fix
+/add
+/Modify
+/update
+
+Suggest code optimizations
+
+Explain what this code does
+
+Generate unit tests for this function
+
+Refactor this code to improve readability
+
+Convert this code to use async/await
+
+Add error handling to this code
+
+Document this function with docstrings
+
+Find and fix security vulnerabilities
+
+Show me how to use this API
+
+Generate example usage for this function
+
+Convert this code to another programming language
+
+Summarize the logic in this file
+
+List potential edge cases for this function
+
+Suggest better variable names
+
+Explain why this code might fail
+
+Add logging to this code
+
+Show me how to mock dependencies for testing
+
+Suggest performance improvements
+
+Identify deprecated patterns in this code
+
+Help me write a README for this project

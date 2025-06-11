@@ -13,22 +13,32 @@
 #######################################
 variable "location" {
     description = "Azure region for resources"
-    default     = "East US"
+    default     = "North Europe"
+
+    validation {
+        condition     = contains(["North Europe", "West Europe"], var.location)
+        error_message = "The location must be one of: East US, East US 2, West US, West US 2, Central US, North Europe, West Europe."
+    }
 }
 
 variable "admin_username" {
     description = "Admin username for SQL Server VM"
     default     = "sqladminuser"
+
+    validation {
+        condition     = length(var.admin_username) >= 5 && length(var.admin_username) <= 20
+        error_message = "The admin_username must be between 5 and 20 characters in length."
+    }
 }
 
 variable "rdp_allowed_ip" {
     description = "IP allowed to RDP (set to your public IP)"
-    default     = "YOUR_PUBLIC_IP/32"
+    default     = "10.0.164.1/32"
 }
 
 variable "sql_allowed_ip" {
     description = "IP allowed to access SQL (set to your public IP or subnet)"
-    default     = "YOUR_PUBLIC_IP/32"
+    default     = "10.0.164.1/32"
 }
 
 #######################################
@@ -91,10 +101,10 @@ locals {
 ############## resources
 #######################################
 
-# Generate a random password for the SQL admin user
+# Generate a strong random password for the SQL Server admin user
 resource "random_password" "sql_admin" {
-    length  = 16
-    special = true
+    length  = 16   # Password length of 16 characters
+    special = true # Include special characters for increased security
 }
 
 # Create a resource group
@@ -105,6 +115,10 @@ resource "azurerm_resource_group" "sql_rg" {
         environment = local.environment
         workload    = local.workload
     }
+
+    lifecycle {
+        ignore_changes = [tags]
+    }
 }
 
 # Create a virtual network
@@ -113,7 +127,18 @@ resource "azurerm_virtual_network" "sql_vnet" {
     address_space       = local.vnet_address_space
     location            = azurerm_resource_group.sql_rg.location
     resource_group_name = azurerm_resource_group.sql_rg.name
+    dns_servers         = [] # Optionally specify custom DNS servers, e.g., ["10.0.0.4", "10.0.0.5"]
+    bgp_community       = null # Optionally specify a BGP community
+    flow_timeout_in_minutes = null # Optionally specify flow timeout
     tags                = azurerm_resource_group.sql_rg.tags
+
+    dynamic "subnet" {
+      for_each = local.subnet_address_prefixes
+      content {
+        name           = local.subnet_name
+        address_prefix = subnet.value
+      }
+    }
 }
 
 # Create a subnet within the virtual network
