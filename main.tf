@@ -199,3 +199,93 @@ resource "azurerm_role_assignment" "aks_dns" {
     role_definition_name = "Private DNS Zone Contributor"
     principal_id         = azurerm_kubernetes_cluster.main[each.key].identity[0].principal_id
 }
+
+# Azure Backup for AKS (Backup Vault + Backup Policy + Backup Instance)
+
+# Creates a Backup Vault for AKS backups in each environment
+resource "azurerm_data_protection_backup_vault" "aks" {
+    for_each            = var.resource_flags.aks ? { for env in local.active_environments : env => env } : {}
+    name                = "backupvault-aks-${each.key}"
+    location            = var.regions[0]
+    resource_group_name = azurerm_resource_group.main[each.key].name
+    datastore_type      = "VaultStore"
+    redundancy          = "LocallyRedundant"
+}
+
+# Defines a backup policy for AKS clusters (daily backup, 30 days retention)
+resource "azurerm_data_protection_backup_policy_kubernetes_cluster" "aks" {
+    for_each            = var.resource_flags.aks ? { for env in local.active_environments : env => env } : {}
+    name                = "backup-policy-aks-${each.key}"
+    vault_id            = azurerm_data_protection_backup_vault.aks[each.key].id
+
+    backup_repeating_time_intervals = ["R/2024-01-01T00:00:00+00:00/P1D"] # Daily backup
+    default_retention_duration      = "P30D" # 30 days retention
+}
+
+# Associates the AKS cluster with the backup vault and policy to enable backups
+resource "azurerm_data_protection_backup_instance_kubernetes_cluster" "aks" {
+    for_each            = var.resource_flags.aks ? { for env in local.active_environments : env => env } : {}
+    name                = "backupinstance-aks-${each.key}"
+    location            = var.regions[0]
+    resource_group_name = azurerm_resource_group.main[each.key].name
+    vault_id            = azurerm_data_protection_backup_vault.aks[each.key].id
+
+    kubernetes_cluster_id = azurerm_kubernetes_cluster.main[each.key].id
+    backup_policy_id      = azurerm_data_protection_backup_policy_kubernetes_cluster.aks[each.key].id
+}
+
+# Azure Cache for Redis
+resource "azurerm_redis_cache" "main" {
+    for_each            = { for env in local.active_environments : env => env }
+    name                = "redis-${each.key}"
+    location            = var.regions[0]
+    resource_group_name = azurerm_resource_group.main[each.key].name
+    capacity            = 1
+    family              = "C"
+    sku_name            = "Basic"
+    enable_non_ssl_port = false
+
+    redis_configuration {
+        maxmemory_policy = "allkeys-lru"
+    }
+}
+
+# Private Endpoint for Redis Cache
+resource "azurerm_private_endpoint" "redis" {
+    for_each            = { for env in local.active_environments : env => env }
+    name                = "pe-redis-${each.key}"
+    location            = var.regions[0]
+    resource_group_name = azurerm_resource_group.main[each.key].name
+    subnet_id           = azurerm_subnet.appgw[each.key].id
+
+    private_service_connection {
+        name                           = "psc-redis-${each.key}"
+        private_connection_resource_id = azurerm_redis_cache.main[each.key].id
+        subresource_names              = ["redisCache"]
+        is_manual_connection           = false
+    }
+}
+
+# Private DNS Zone for Redis Cache
+resource "azurerm_private_dns_zone" "redis" {
+    for_each            = { for env in local.active_environments : env => env }
+    name                = "privatelink.redis.cache.windows.net"
+    resource_group_name = azurerm_resource_group.main[each.key].name
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "redis" {
+    for_each              = { for env in local.active_environments : env => env }
+    name                  = "vnet-link-redis-${each.key}"
+    resource_group_name   = azurerm_resource_group.main[each.key].name
+    private_dns_zone_name = azurerm_private_dns_zone.redis[each.key].name
+    virtual_network_id    = azurerm_virtual_network.main[each.key].id
+}
+
+resource "azurerm_private_dns_a_record" "redis" {
+    for_each              = { for env in local.active_environments : env => env }
+    name                  = azurerm_redis_cache.main[each.key].name
+    zone_name             = azurerm_private_dns_zone.redis[each.key].name
+    resource_group_name   = azurerm_resource_group.main[each.key].name
+    ttl                   = 300
+    records               = [azurerm_private_endpoint.redis[each.key].private_service_connection[0].private_ip_address]
+}
